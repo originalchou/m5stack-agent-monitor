@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Arduino / ESP32 build artifacts
+build/
+*.bin
+*.elf
+*.hex
+*.map
+.arduino/
+
+# Backend / frontend (Node)
+node_modules/
+dist/
+.env
+.env.*
+*.log
+
+# Python (in case the backend is Python)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editors
+.vscode/
+.idea/
