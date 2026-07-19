@@ -16,6 +16,10 @@ function subject(p: CodexHookPayload): string {
   const bits: string[] = [];
   if (p.tool_name) bits.push(`tool=${p.tool_name}`);
   if (p.source) bits.push(`source=${p.source}`);
+  if (typeof p.prompt === 'string') {
+    const snip = p.prompt.replace(/\s+/g, ' ').slice(0, 48);
+    bits.push(`prompt="${snip}${p.prompt.length > 48 ? '…' : ''}"`);
+  }
   if (p.turn_id) bits.push(`turn=${p.turn_id}`);
   return bits.length ? `  ${DIM}${bits.join(' ')}${RESET}` : '';
 }

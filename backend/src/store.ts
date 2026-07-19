@@ -40,6 +40,9 @@ export class InMemorySessionStore implements SessionStore {
         session.status = 'ended';
         session.endedAt = ts;
         break;
+      case 'UserPromptSubmit':
+        this.onUserPromptSubmit(session, payload, ts);
+        break;
       case 'PreToolUse':
         this.onPreToolUse(session, payload, ts);
         break;
@@ -118,6 +121,18 @@ export class InMemorySessionStore implements SessionStore {
     }
     turn.lastActivityAt = ts;
     return turn;
+  }
+
+  private onUserPromptSubmit(session: Session, p: CodexHookPayload, ts: string): void {
+    // A user prompt means the session is being worked right now. Re-activate it,
+    // so resuming a previously ended session (or one that ended before the backend
+    // was running) puts it back under active tracking.
+    session.status = 'active';
+    session.endedAt = undefined;
+    if (p.turn_id) {
+      const turn = this.ensureTurn(session, p.turn_id, ts);
+      if (p.prompt) turn.prompt = p.prompt;
+    }
   }
 
   private onPreToolUse(session: Session, p: CodexHookPayload, ts: string): void {

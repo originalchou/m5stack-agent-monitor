@@ -28,6 +28,7 @@ export interface CodexHookPayload {
   agent_type?: string;
   source?: string;
   reason?: string;
+  prompt?: string;
   last_assistant_message?: string | null;
   stop_hook_active?: boolean;
   [key: string]: unknown;
@@ -49,6 +50,7 @@ export interface Turn {
   turnId: string;
   startedAt: string;
   lastActivityAt: string;
+  prompt?: string; // the user prompt that opened this turn (UserPromptSubmit)
   toolCalls: Map<string, ToolCall>; // keyed by toolUseId
   lastAssistantMessage?: string | null;
 }

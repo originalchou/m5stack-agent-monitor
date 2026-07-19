@@ -24,6 +24,17 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$HOME/.codex/hooks/agent-monitor-forward.sh\"",
+            "statusMessage": "agent-monitor"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "*",

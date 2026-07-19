@@ -60,9 +60,14 @@ Then, in Codex, run `/hooks` and **review + trust** the new hooks (Codex skips
 untrusted command hooks). Start the backend, use Codex normally, and watch events
 stream into the console.
 
-Registered events: `SessionStart`, `SessionEnd`, `PreToolUse`, `PostToolUse`,
-`PermissionRequest`, `Stop`. Point the hook at a different backend with
-`AGENT_MONITOR_URL` (e.g. `http://localhost:3050`).
+Registered events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`,
+`PostToolUse`, `PermissionRequest`, `Stop`. Point the hook at a different backend
+with `AGENT_MONITOR_URL` (e.g. `http://localhost:3050`).
+
+`UserPromptSubmit` fires whenever the user sends a prompt, so it doubles as the
+"session is being worked right now" signal: it re-activates a session that had
+ended (e.g. resuming an old session, or one that ended before the backend was
+running) and records the prompt on its turn.
 
 ## What we learned about the hook payloads
 

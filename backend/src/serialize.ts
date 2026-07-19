@@ -19,6 +19,7 @@ export function serializeSession(s: Session, opts: { includeRaw?: boolean } = {}
       turnId: t.turnId,
       startedAt: t.startedAt,
       lastActivityAt: t.lastActivityAt,
+      prompt: t.prompt,
       lastAssistantMessage: t.lastAssistantMessage,
       toolCalls: [...t.toolCalls.values()],
     })),
