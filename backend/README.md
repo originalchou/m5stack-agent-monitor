@@ -28,8 +28,9 @@ Listens on `http://localhost:3050` (override with `PORT`).
 
 Sessions are keyed `agentType → sessionId`. Each session keeps the **raw event
 stream** plus a derived view: `turns` (by `turn_id`), each turn's `toolCalls` (by
-`tool_use_id`, `running → completed`), a `pendingApproval` slot, and lifecycle
-`status` (`active`/`ended`). The model is intentionally light — it will firm up once
+`tool_use_id`, `running → completed`), `subagents` (by `agent_id`,
+`running → stopped`), a `pendingApproval` slot, and lifecycle `status`
+(`active`/`ended`). The model is intentionally light — it will firm up once
 we've observed real payloads. Storage sits behind the `SessionStore` interface
 (`src/types.ts`) so a MongoDB implementation can drop in later without touching the
 routes.
@@ -60,9 +61,15 @@ Then, in Codex, run `/hooks` and **review + trust** the new hooks (Codex skips
 untrusted command hooks). Start the backend, use Codex normally, and watch events
 stream into the console.
 
-Registered events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`,
-`PostToolUse`, `PermissionRequest`, `Stop`. Point the hook at a different backend
-with `AGENT_MONITOR_URL` (e.g. `http://localhost:3050`).
+Registered events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
+`SubagentStart`, `SubagentStop`, `PreToolUse`, `PostToolUse`, `PermissionRequest`,
+`Stop`. Point the hook at a different backend with `AGENT_MONITOR_URL`
+(e.g. `http://localhost:3050`).
+
+`SubagentStart` / `SubagentStop` track the subagents a session spawns (they carry
+the **parent** `session_id` plus `agent_id` / `agent_type`). Each session keeps a
+`subagents` map keyed by `agent_id` with `running → stopped` status, so the device
+can show how many agents are working under a task.
 
 `UserPromptSubmit` fires whenever the user sends a prompt, so it doubles as the
 "session is being worked right now" signal: it re-activates a session that had

@@ -15,6 +15,7 @@ const YELLOW = '\x1b[33m';
 function subject(p: CodexHookPayload): string {
   const bits: string[] = [];
   if (p.tool_name) bits.push(`tool=${p.tool_name}`);
+  if (p.agent_type) bits.push(`agent=${p.agent_type}`);
   if (p.source) bits.push(`source=${p.source}`);
   if (typeof p.prompt === 'string') {
     const snip = p.prompt.replace(/\s+/g, ' ').slice(0, 48);

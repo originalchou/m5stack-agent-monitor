@@ -9,6 +9,7 @@ import type {
   CodexHookPayload,
   Session,
   SessionStore,
+  Subagent,
   ToolCall,
   Turn,
 } from './types';
@@ -42,6 +43,12 @@ export class InMemorySessionStore implements SessionStore {
         break;
       case 'UserPromptSubmit':
         this.onUserPromptSubmit(session, payload, ts);
+        break;
+      case 'SubagentStart':
+        this.onSubagentStart(session, payload, ts);
+        break;
+      case 'SubagentStop':
+        this.onSubagentStop(session, payload, ts);
         break;
       case 'PreToolUse':
         this.onPreToolUse(session, payload, ts);
@@ -100,6 +107,7 @@ export class InMemorySessionStore implements SessionStore {
         startedAt: ts,
         lastActivityAt: ts,
         turns: new Map<string, Turn>(),
+        subagents: new Map<string, Subagent>(),
         pendingApproval: null,
         events: [],
       };
@@ -133,6 +141,33 @@ export class InMemorySessionStore implements SessionStore {
       const turn = this.ensureTurn(session, p.turn_id, ts);
       if (p.prompt) turn.prompt = p.prompt;
     }
+  }
+
+  private onSubagentStart(session: Session, p: CodexHookPayload, ts: string): void {
+    if (!p.agent_id) return;
+    const existing = session.subagents.get(p.agent_id);
+    session.subagents.set(p.agent_id, {
+      agentId: p.agent_id,
+      agentType: p.agent_type ?? 'unknown',
+      turnId: p.turn_id,
+      status: 'running',
+      startedAt: existing?.startedAt ?? ts,
+    });
+  }
+
+  private onSubagentStop(session: Session, p: CodexHookPayload, ts: string): void {
+    if (!p.agent_id) return;
+    const existing = session.subagents.get(p.agent_id);
+    session.subagents.set(p.agent_id, {
+      agentId: p.agent_id,
+      agentType: p.agent_type ?? existing?.agentType ?? 'unknown',
+      turnId: p.turn_id ?? existing?.turnId,
+      status: 'stopped',
+      startedAt: existing?.startedAt ?? ts, // may have started before the backend was up
+      stoppedAt: ts,
+      lastAssistantMessage: p.last_assistant_message ?? null,
+      transcriptPath: p.agent_transcript_path ?? null,
+    });
   }
 
   private onPreToolUse(session: Session, p: CodexHookPayload, ts: string): void {

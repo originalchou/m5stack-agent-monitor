@@ -15,6 +15,7 @@ export function serializeSession(s: Session, opts: { includeRaw?: boolean } = {}
     endedAt: s.endedAt,
     lastActivityAt: s.lastActivityAt,
     pendingApproval: s.pendingApproval,
+    subagents: [...s.subagents.values()],
     turns: [...s.turns.values()].map((t) => ({
       turnId: t.turnId,
       startedAt: t.startedAt,
@@ -39,6 +40,8 @@ export function summarizeSession(s: Session) {
     startedAt: s.startedAt,
     lastActivityAt: s.lastActivityAt,
     turnCount: s.turns.size,
+    subagentCount: s.subagents.size,
+    activeSubagentCount: [...s.subagents.values()].filter((a) => a.status === 'running').length,
     eventCount: s.events.length,
     hasPendingApproval: s.pendingApproval !== null,
   };

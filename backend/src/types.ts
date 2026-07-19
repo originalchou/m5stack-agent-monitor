@@ -26,6 +26,7 @@ export interface CodexHookPayload {
   tool_response?: unknown;
   agent_id?: string;
   agent_type?: string;
+  agent_transcript_path?: string | null;
   source?: string;
   reason?: string;
   prompt?: string;
@@ -55,6 +56,17 @@ export interface Turn {
   lastAssistantMessage?: string | null;
 }
 
+export interface Subagent {
+  agentId: string;
+  agentType: string;
+  turnId?: string; // the parent turn that spawned it
+  status: 'running' | 'stopped';
+  startedAt: string;
+  stoppedAt?: string;
+  lastAssistantMessage?: string | null;
+  transcriptPath?: string | null;
+}
+
 export interface PendingApproval {
   turnId?: string;
   toolName?: string;
@@ -79,6 +91,7 @@ export interface Session {
   endedAt?: string;
   lastActivityAt: string;
   turns: Map<string, Turn>; // keyed by turnId
+  subagents: Map<string, Subagent>; // keyed by agentId
   pendingApproval: PendingApproval | null;
   events: RawEvent[]; // full raw history, newest last
 }
