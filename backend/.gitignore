@@ -3,3 +3,7 @@ dist/
 *.log
 .env
 .env.*
+
+# Standardize on npm (package-lock.json); ignore other package managers
+pnpm-lock.yaml
+yarn.lock
