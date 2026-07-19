@@ -1,0 +1,75 @@
+{
+  "description": "agent-monitor: forward Codex lifecycle events to the local backend (localhost:3050).",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$HOME/.codex/hooks/agent-monitor-forward.sh\"",
+            "statusMessage": "agent-monitor"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$HOME/.codex/hooks/agent-monitor-forward.sh\"",
+            "statusMessage": "agent-monitor"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$HOME/.codex/hooks/agent-monitor-forward.sh\"",
+            "statusMessage": "agent-monitor"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$HOME/.codex/hooks/agent-monitor-forward.sh\"",
+            "statusMessage": "agent-monitor"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$HOME/.codex/hooks/agent-monitor-forward.sh\"",
+            "statusMessage": "agent-monitor"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"$HOME/.codex/hooks/agent-monitor-forward.sh\"",
+            "statusMessage": "agent-monitor"
+          }
+        ]
+      }
+    ]
+  }
+}

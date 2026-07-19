@@ -1,0 +1,21 @@
+{
+  "name": "agent-monitor-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Collects AI coding-agent status (Codex, Claude Code) via lifecycle hooks and serves it to the M5Stack agent monitor.",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
