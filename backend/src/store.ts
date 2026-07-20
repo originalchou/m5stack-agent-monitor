@@ -1,25 +1,35 @@
 // store.ts — in-memory implementation of SessionStore.
 //
 // Sessions are keyed agentType -> sessionId. Each hook payload is appended to the
-// session's raw event log and folded into a light derived model (turns, tool
-// calls, pending approval, lifecycle status).
+// raw event log and folded into a derived model: lifecycle status, title, plan
+// (main-agent update_plan), subagents, and turns. Context-window / rate-limit usage
+// is refreshed from the transcript by refreshUsage() (async, called by the route).
 
+import { basename } from 'node:path';
 import type {
   AgentType,
   CodexHookPayload,
+  PlanStep,
   Session,
   SessionStore,
   Subagent,
   ToolCall,
   Turn,
 } from './types';
+import { readLatestMetrics, type TranscriptMetrics } from './transcript';
 
 function now(): string {
   return new Date().toISOString();
 }
 
+function firstLine(s: string, max = 60): string {
+  const line = s.split('\n')[0]?.trim() ?? '';
+  return line.length > max ? line.slice(0, max - 1) + '…' : line;
+}
+
 export class InMemorySessionStore implements SessionStore {
   private sessions = new Map<AgentType, Map<string, Session>>();
+  private usageByAgent = new Map<AgentType, TranscriptMetrics>();
 
   recordEvent(agentType: AgentType, payload: CodexHookPayload): Session {
     const session = this.ensureSession(agentType, payload);
@@ -28,21 +38,37 @@ export class InMemorySessionStore implements SessionStore {
     session.lastActivityAt = ts;
     session.events.push({ event: payload.hook_event_name, at: ts, payload });
 
-    // Keep the latest known metadata on the session.
     if (payload.model) session.model = payload.model;
     if (payload.cwd) session.cwd = payload.cwd;
     if (payload.permission_mode) session.permissionMode = payload.permission_mode;
+    // Remember the main-agent transcript (subagent events point at their own file).
+    if (!payload.agent_id && payload.transcript_path) {
+      session.transcriptPath = payload.transcript_path;
+    }
+    if (!session.title && session.cwd) session.title = basename(session.cwd);
 
     switch (payload.hook_event_name) {
       case 'SessionStart':
-        session.status = 'active';
+        session.status = 'running';
         break;
       case 'SessionEnd':
-        session.status = 'ended';
-        session.endedAt = ts;
+        // handled by the route (removes the session); nothing to fold here.
         break;
       case 'UserPromptSubmit':
-        this.onUserPromptSubmit(session, payload, ts);
+        session.status = 'running';
+        session.doneAt = undefined;
+        if (payload.prompt) {
+          session.title = firstLine(payload.prompt);
+          if (payload.turn_id) this.ensureTurn(session, payload.turn_id, ts).prompt = payload.prompt;
+        }
+        break;
+      case 'PreToolUse':
+        this.maybeUpdatePlan(session, payload, ts);
+        this.onPreToolUse(session, payload, ts);
+        break;
+      case 'PostToolUse':
+        this.maybeUpdatePlan(session, payload, ts);
+        this.onPostToolUse(session, payload, ts);
         break;
       case 'SubagentStart':
         this.onSubagentStart(session, payload, ts);
@@ -50,29 +76,26 @@ export class InMemorySessionStore implements SessionStore {
       case 'SubagentStop':
         this.onSubagentStop(session, payload, ts);
         break;
-      case 'PreToolUse':
-        this.onPreToolUse(session, payload, ts);
-        break;
-      case 'PostToolUse':
-        this.onPostToolUse(session, payload, ts);
-        break;
-      case 'PermissionRequest':
-        session.pendingApproval = {
-          turnId: payload.turn_id,
-          toolName: payload.tool_name,
-          toolInput: payload.tool_input,
-          requestedAt: ts,
-        };
-        break;
       case 'Stop':
         this.onStop(session, payload, ts);
         break;
+      case 'PermissionRequest':
+        // Device-notification only (handled by the route); no state change.
+        break;
       default:
-        // Unhandled event kinds are still captured in the raw event log above.
         break;
     }
 
     return session;
+  }
+
+  /** Refresh usage (context window + rate limits) from the session transcript. */
+  async refreshUsage(session: Session): Promise<void> {
+    const metrics = await readLatestMetrics(session.transcriptPath);
+    if (!metrics) return;
+    session.usage = metrics;
+    // Rate limits are account-global; keep the freshest per agent for usage screens.
+    this.usageByAgent.set(session.agentType, metrics);
   }
 
   getSession(agentType: AgentType, sessionId: string): Session | undefined {
@@ -85,8 +108,15 @@ export class InMemorySessionStore implements SessionStore {
       if (agentType && type !== agentType) continue;
       out.push(...byId.values());
     }
-    // Most recently active first.
     return out.sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+  }
+
+  removeSession(agentType: AgentType, sessionId: string): boolean {
+    return this.sessions.get(agentType)?.delete(sessionId) ?? false;
+  }
+
+  latestUsage(agentType: AgentType): TranscriptMetrics | null {
+    return this.usageByAgent.get(agentType) ?? null;
   }
 
   // --- helpers --------------------------------------------------------------
@@ -103,12 +133,13 @@ export class InMemorySessionStore implements SessionStore {
       session = {
         agentType,
         sessionId: payload.session_id,
-        status: 'active',
+        status: 'running',
         startedAt: ts,
         lastActivityAt: ts,
+        plan: null,
+        usage: null,
         turns: new Map<string, Turn>(),
         subagents: new Map<string, Subagent>(),
-        pendingApproval: null,
         events: [],
       };
       byId.set(payload.session_id, session);
@@ -119,28 +150,28 @@ export class InMemorySessionStore implements SessionStore {
   private ensureTurn(session: Session, turnId: string, ts: string): Turn {
     let turn = session.turns.get(turnId);
     if (!turn) {
-      turn = {
-        turnId,
-        startedAt: ts,
-        lastActivityAt: ts,
-        toolCalls: new Map<string, ToolCall>(),
-      };
+      turn = { turnId, startedAt: ts, lastActivityAt: ts, toolCalls: new Map<string, ToolCall>() };
       session.turns.set(turnId, turn);
     }
     turn.lastActivityAt = ts;
     return turn;
   }
 
-  private onUserPromptSubmit(session: Session, p: CodexHookPayload, ts: string): void {
-    // A user prompt means the session is being worked right now. Re-activate it,
-    // so resuming a previously ended session (or one that ended before the backend
-    // was running) puts it back under active tracking.
-    session.status = 'active';
-    session.endedAt = undefined;
-    if (p.turn_id) {
-      const turn = this.ensureTurn(session, p.turn_id, ts);
-      if (p.prompt) turn.prompt = p.prompt;
-    }
+  /** Main-agent update_plan → session plan. Subagent plans (with agent_id) ignored. */
+  private maybeUpdatePlan(session: Session, p: CodexHookPayload, ts: string): void {
+    if (p.tool_name !== 'update_plan' || p.agent_id) return;
+    const input = p.tool_input as { explanation?: string; plan?: unknown } | undefined;
+    if (!input || !Array.isArray(input.plan)) return;
+    const steps: PlanStep[] = input.plan
+      .filter((s): s is { step: string; status: string } => !!s && typeof s === 'object')
+      .map((s) => ({
+        step: String((s as any).step ?? ''),
+        status:
+          (s as any).status === 'in_progress' || (s as any).status === 'completed'
+            ? (s as any).status
+            : 'pending',
+      }));
+    session.plan = { explanation: input.explanation, steps, updatedAt: ts };
   }
 
   private onSubagentStart(session: Session, p: CodexHookPayload, ts: string): void {
@@ -163,7 +194,7 @@ export class InMemorySessionStore implements SessionStore {
       agentType: p.agent_type ?? existing?.agentType ?? 'unknown',
       turnId: p.turn_id ?? existing?.turnId,
       status: 'stopped',
-      startedAt: existing?.startedAt ?? ts, // may have started before the backend was up
+      startedAt: existing?.startedAt ?? ts,
       stoppedAt: ts,
       lastAssistantMessage: p.last_assistant_message ?? null,
       transcriptPath: p.agent_transcript_path ?? null,
@@ -193,7 +224,6 @@ export class InMemorySessionStore implements SessionStore {
       call.status = 'completed';
       call.completedAt = ts;
     } else {
-      // PostToolUse without a matching PreToolUse (e.g. server started mid-turn).
       turn.toolCalls.set(p.tool_use_id, {
         toolUseId: p.tool_use_id,
         toolName: p.tool_name ?? 'unknown',
@@ -209,14 +239,10 @@ export class InMemorySessionStore implements SessionStore {
   }
 
   private onStop(session: Session, p: CodexHookPayload, ts: string): void {
-    // A turn finished; record the assistant's closing message and clear any
-    // approval that was waiting on this turn.
+    session.status = 'done';
+    session.doneAt = ts;
     if (p.turn_id) {
-      const turn = this.ensureTurn(session, p.turn_id, ts);
-      turn.lastAssistantMessage = p.last_assistant_message ?? null;
-    }
-    if (session.pendingApproval && session.pendingApproval.turnId === p.turn_id) {
-      session.pendingApproval = null;
+      this.ensureTurn(session, p.turn_id, ts).lastAssistantMessage = p.last_assistant_message ?? null;
     }
   }
 }

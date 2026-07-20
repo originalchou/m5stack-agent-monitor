@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Monitor — Device Setup</title>
+    <style>
+      :root {
+        --bg: #0f121c; --panel: #171c2a; --panel2: #1e2434; --line: #2a3145;
+        --text: #eceff5; --muted: #8c96aa; --accent: #26c6b6; --accent2: #608dff;
+        --good: #4ac97e; --warn: #f0b446; --bad: #e5606a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg); color: var(--text); display: flex; justify-content: center;
+        padding: 32px 16px;
+      }
+      .wrap { width: 100%; max-width: 520px; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      .sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+      .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+      .card.disabled { opacity: 0.5; pointer-events: none; }
+      .step { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+      .step .n { width: 24px; height: 24px; border-radius: 50%; background: var(--panel2); color: var(--muted);
+        display: grid; place-items: center; font-size: 13px; font-weight: 600; flex: none; }
+      .step h2 { font-size: 15px; margin: 0; }
+      .status { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+      .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+      .dot.on { background: var(--good); box-shadow: 0 0 8px var(--good); }
+      .dot.off { background: var(--bad); }
+      .muted { color: var(--muted); }
+      button {
+        font: inherit; font-weight: 600; border: none; border-radius: 9px; padding: 9px 16px;
+        background: var(--accent); color: #06231f; cursor: pointer;
+      }
+      button.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+      .row { display: flex; gap: 10px; align-items: center; }
+      .between { justify-content: space-between; }
+      ul.nets { list-style: none; margin: 14px 0 0; padding: 0; max-height: 240px; overflow-y: auto; }
+      ul.nets li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line);
+        border-radius: 9px; margin-bottom: 8px; cursor: pointer; }
+      ul.nets li.sel { border-color: var(--accent); background: var(--panel2); }
+      .ssid { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 14px; }
+      .bars i { width: 3px; background: var(--muted); border-radius: 1px; }
+      .lock { color: var(--muted); font-size: 12px; }
+      input[type="password"], input[type="text"] {
+        font: inherit; width: 100%; padding: 9px 12px; border-radius: 9px; border: 1px solid var(--line);
+        background: var(--bg); color: var(--text); margin-top: 12px;
+      }
+      .result { margin-top: 14px; font-size: 14px; }
+      .result.good { color: var(--good); } .result.bad { color: var(--bad); }
+      .empty { color: var(--muted); font-size: 14px; padding: 12px 0; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Agent Monitor — Device Setup</h1>
+      <p class="sub">Connect your M5Stack CoreS3 over USB, then join it to WiFi.</p>
+
+      <div class="card">
+        <div class="step"><span class="n">1</span><h2>USB connection</h2></div>
+        <div class="status">
+          <span id="usbDot" class="dot off"></span>
+          <span id="usbText">Waiting for device…</span>
+        </div>
+      </div>
+
+      <div id="wifiCard" class="card disabled">
+        <div class="step"><span class="n">2</span><h2>WiFi setup</h2></div>
+        <div class="row between">
+          <span class="muted" id="wifiState">Not connected</span>
+          <button id="refreshBtn" class="ghost">Refresh</button>
+        </div>
+        <ul class="nets" id="nets"><li class="empty">Tap Refresh to scan for networks.</li></ul>
+        <input id="password" type="password" placeholder="WiFi password" autocomplete="off" />
+        <div class="row between" style="margin-top: 14px;">
+          <span id="selName" class="muted">No network selected</span>
+          <button id="confirmBtn" disabled>Confirm</button>
+        </div>
+        <div id="result" class="result"></div>
+      </div>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

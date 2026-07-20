@@ -1,16 +1,15 @@
 // types.ts — the data model for collected agent status.
 //
-// NOTE: this model is deliberately provisional. We're still discovering what the
-// Codex hooks actually carry (see logger output), so every session also keeps the
-// raw event stream. The derived shape (turns / tool calls / approvals) will firm
-// up once we've observed real payloads.
+// Derived from real Codex hook payloads + transcripts (see docs/design). Every
+// session still keeps the raw event stream so nothing is lost.
+
+import type { TranscriptMetrics } from './transcript';
 
 export type AgentType = 'codex' | 'claude';
 
 /**
- * Raw Codex hook payload. Only the fields we currently read are typed; the index
- * signature keeps the rest so nothing is dropped. See codex-hook-ref for the full
- * per-event wire format.
+ * Raw Codex hook payload. Only the fields we read are typed; the index signature
+ * keeps the rest. See codex-hook-ref for the full per-event wire format.
  */
 export interface CodexHookPayload {
   hook_event_name: string;
@@ -35,6 +34,19 @@ export interface CodexHookPayload {
   [key: string]: unknown;
 }
 
+export type PlanStepStatus = 'pending' | 'in_progress' | 'completed';
+
+export interface PlanStep {
+  step: string;
+  status: PlanStepStatus;
+}
+
+export interface SessionPlan {
+  explanation?: string;
+  steps: PlanStep[];
+  updatedAt: string;
+}
+
 export interface ToolCall {
   toolUseId: string;
   toolName: string;
@@ -51,27 +63,20 @@ export interface Turn {
   turnId: string;
   startedAt: string;
   lastActivityAt: string;
-  prompt?: string; // the user prompt that opened this turn (UserPromptSubmit)
-  toolCalls: Map<string, ToolCall>; // keyed by toolUseId
+  prompt?: string;
+  toolCalls: Map<string, ToolCall>;
   lastAssistantMessage?: string | null;
 }
 
 export interface Subagent {
   agentId: string;
   agentType: string;
-  turnId?: string; // the parent turn that spawned it
+  turnId?: string;
   status: 'running' | 'stopped';
   startedAt: string;
   stoppedAt?: string;
   lastAssistantMessage?: string | null;
   transcriptPath?: string | null;
-}
-
-export interface PendingApproval {
-  turnId?: string;
-  toolName?: string;
-  toolInput?: unknown;
-  requestedAt: string;
 }
 
 export interface RawEvent {
@@ -83,26 +88,33 @@ export interface RawEvent {
 export interface Session {
   agentType: AgentType;
   sessionId: string;
+  title?: string; // derived task name (latest prompt / cwd basename)
   model?: string;
   cwd?: string;
   permissionMode?: string;
-  status: 'active' | 'ended';
+  status: 'running' | 'done';
   startedAt: string;
-  endedAt?: string;
+  doneAt?: string; // when Stop fired
   lastActivityAt: string;
-  turns: Map<string, Turn>; // keyed by turnId
-  subagents: Map<string, Subagent>; // keyed by agentId
-  pendingApproval: PendingApproval | null;
+  transcriptPath?: string | null; // main-agent transcript, for usage refresh
+  plan: SessionPlan | null; // main-agent update_plan
+  usage: TranscriptMetrics | null; // context + rate limits from the transcript
+  turns: Map<string, Turn>;
+  subagents: Map<string, Subagent>;
   events: RawEvent[]; // full raw history, newest last
 }
 
 /**
- * Storage interface. The current implementation keeps everything in memory; a
- * MongoDB-backed implementation can drop in behind this same interface later.
+ * Storage interface. In-memory today; a MongoDB implementation can drop in behind
+ * the same interface later.
  */
 export interface SessionStore {
-  /** Fold one hook payload into the store, returning the updated session. */
   recordEvent(agentType: AgentType, payload: CodexHookPayload): Session;
+  /** Refresh context-window + rate-limit usage from the session transcript. */
+  refreshUsage(session: Session): Promise<void>;
   getSession(agentType: AgentType, sessionId: string): Session | undefined;
   listSessions(agentType?: AgentType): Session[];
+  removeSession(agentType: AgentType, sessionId: string): boolean;
+  /** Latest known usage per agent, for the device's usage screens. */
+  latestUsage(agentType: AgentType): TranscriptMetrics | null;
 }
