@@ -24,7 +24,10 @@ Date: 2026-07-20. Turns the hook-collection backend + UI mock into a working sys
   - Confirm from device → remove session entirely.
 - `plan: { explanation, steps: [{ step, status }] }` — set from main-agent `update_plan`
   (Pre or PostToolUse, no `agent_id`).
-- `subagents` — already tracked (agents list).
+- `subagents` — modelled from the main agent's `collaborationspawn_agent` (name, from
+  the `/root/<task>` in its JSON-string `tool_response`) and `collaborationwait_agent`
+  (status roster) calls, keyed by agent_name. NOT from SubagentStart/Stop, whose UUID
+  `agent_id` can't be joined to the spawn/wait names.
 - `usage: { contextWindow, contextUsedTokens, contextLeftPercent, rateLimits: { primary, secondary }, planType }`
   refreshed from the transcript on **every** hook event (mtime-cached read of the last
   `token_count` line).

@@ -28,7 +28,7 @@ Listens on `http://localhost:3050` (override with `PORT`).
 
 Sessions are keyed `agentType → sessionId`. Each session keeps the **raw event
 stream** plus a derived view: `turns` (by `turn_id`), each turn's `toolCalls` (by
-`tool_use_id`, `running → completed`), `subagents` (by `agent_id`,
+`tool_use_id`, `running → completed`), `subagents` (by agent_name,
 `running → stopped`), a `pendingApproval` slot, and lifecycle `status`
 (`active`/`ended`). The model is intentionally light — it will firm up once
 we've observed real payloads. Storage sits behind the `SessionStore` interface
@@ -66,10 +66,19 @@ Registered events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
 `Stop`. Point the hook at a different backend with `AGENT_MONITOR_URL`
 (e.g. `http://localhost:3050`).
 
-`SubagentStart` / `SubagentStop` track the subagents a session spawns (they carry
-the **parent** `session_id` plus `agent_id` / `agent_type`). Each session keeps a
-`subagents` map keyed by `agent_id` with `running → stopped` status, so the device
-can show how many agents are working under a task.
+**Subagents** are modelled from the *main* agent's collaboration tool calls, not from
+`SubagentStart`/`SubagentStop`. Those hooks carry a UUID `agent_id` that never appears
+in the spawn/wait payloads, so it can't be joined to a subagent's name — they stay in
+the raw event log only. Instead:
+
+- `collaborationspawn_agent` PostToolUse — `tool_response` (a JSON string) gives
+  `{"task_name":"/root/<name>"}`; we create a subagent keyed by that path, `running`.
+- `collaborationwait_agent` PostToolUse — `tool_response` gives
+  `{"agents":[{agent_name, agent_status}]}` (or `{timed_out:true}`); we sync each
+  agent's status (`"running"` → running, `{completed}` → stopped), skipping `/root`
+  (the main agent).
+
+The device shows each subagent by its short name (e.g. `mock_task_1`).
 
 `UserPromptSubmit` fires whenever the user sends a prompt, so it doubles as the
 "session is being worked right now" signal: it re-activates a session that had

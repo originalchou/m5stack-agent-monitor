@@ -58,7 +58,7 @@ export function summarizeSession(s: Session) {
 
 export function toDeviceSession(s: Session) {
   const agents = [...s.subagents.values()].map((a) => ({
-    type: a.agentType,
+    type: a.displayName, // short task name, e.g. "mock_task_1"
     status: a.status, // 'running' | 'stopped'
   }));
   return {

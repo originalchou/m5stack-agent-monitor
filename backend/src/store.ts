@@ -27,6 +27,24 @@ function firstLine(s: string, max = 60): string {
   return line.length > max ? line.slice(0, max - 1) + '…' : line;
 }
 
+/** Codex hook tool_response is a JSON string; parse it (objects pass through). */
+function parseToolResponse(r: unknown): any {
+  if (typeof r === 'string') {
+    try {
+      return JSON.parse(r);
+    } catch {
+      return null;
+    }
+  }
+  return r ?? null;
+}
+
+/** "/root/mock_task_1" -> "mock_task_1". */
+function shortAgentName(name: string): string {
+  if (name.startsWith('/root/')) return name.slice('/root/'.length);
+  return name.replace(/^\//, '');
+}
+
 export class InMemorySessionStore implements SessionStore {
   private sessions = new Map<AgentType, Map<string, Session>>();
   private usageByAgent = new Map<AgentType, TranscriptMetrics>();
@@ -68,14 +86,11 @@ export class InMemorySessionStore implements SessionStore {
         break;
       case 'PostToolUse':
         this.maybeUpdatePlan(session, payload, ts);
+        this.maybeUpdateSubagents(session, payload, ts);
         this.onPostToolUse(session, payload, ts);
         break;
-      case 'SubagentStart':
-        this.onSubagentStart(session, payload, ts);
-        break;
-      case 'SubagentStop':
-        this.onSubagentStop(session, payload, ts);
-        break;
+      // SubagentStart/SubagentStop carry a UUID agent_id that can't be joined to the
+      // spawn/wait task names, so they're kept only in the raw event log (default case).
       case 'Stop':
         this.onStop(session, payload, ts);
         break;
@@ -174,30 +189,64 @@ export class InMemorySessionStore implements SessionStore {
     session.plan = { explanation: input.explanation, steps, updatedAt: ts };
   }
 
-  private onSubagentStart(session: Session, p: CodexHookPayload, ts: string): void {
-    if (!p.agent_id) return;
-    const existing = session.subagents.get(p.agent_id);
-    session.subagents.set(p.agent_id, {
-      agentId: p.agent_id,
-      agentType: p.agent_type ?? 'unknown',
-      turnId: p.turn_id,
-      status: 'running',
-      startedAt: existing?.startedAt ?? ts,
-    });
+  /**
+   * Subagents are modelled from the MAIN agent's collaboration tool calls, keyed by
+   * agent_name path. collaborationspawn_agent creates one (running); its response
+   * gives the "/root/<task>" name. collaborationwait_agent returns the full roster
+   * with each agent's status, which we sync. Subagent-originated events (agent_id
+   * present) are ignored here.
+   */
+  private maybeUpdateSubagents(session: Session, p: CodexHookPayload, ts: string): void {
+    if (p.agent_id) return;
+    if (p.tool_name === 'collaborationspawn_agent') this.onSpawnAgent(session, p, ts);
+    else if (p.tool_name === 'collaborationwait_agent') this.onWaitAgent(session, p, ts);
   }
 
-  private onSubagentStop(session: Session, p: CodexHookPayload, ts: string): void {
-    if (!p.agent_id) return;
-    const existing = session.subagents.get(p.agent_id);
-    session.subagents.set(p.agent_id, {
-      agentId: p.agent_id,
-      agentType: p.agent_type ?? existing?.agentType ?? 'unknown',
-      turnId: p.turn_id ?? existing?.turnId,
-      status: 'stopped',
+  private onSpawnAgent(session: Session, p: CodexHookPayload, ts: string): void {
+    const resp = parseToolResponse(p.tool_response);
+    // Prefer the canonical "/root/<task>" path from the response; fall back to the
+    // short task_name from the input.
+    let name = typeof resp?.task_name === 'string' ? resp.task_name : undefined;
+    if (!name) {
+      const input = p.tool_input as { task_name?: string } | undefined;
+      if (input?.task_name) name = '/root/' + input.task_name;
+    }
+    if (!name || name === '/root') return;
+    this.upsertSubagent(session, name, 'running', ts, null);
+  }
+
+  private onWaitAgent(session: Session, p: CodexHookPayload, ts: string): void {
+    const resp = parseToolResponse(p.tool_response);
+    const agents = resp?.agents;
+    if (!Array.isArray(agents)) return; // e.g. { timed_out: true }
+    for (const a of agents) {
+      const name = a?.agent_name;
+      if (typeof name !== 'string' || name === '/root') continue; // /root = main agent
+      const st = a.agent_status;
+      const running = st === 'running';
+      const lastMessage =
+        !running && st && typeof st === 'object' && typeof st.completed === 'string'
+          ? st.completed
+          : null;
+      this.upsertSubagent(session, name, running ? 'running' : 'stopped', ts, lastMessage);
+    }
+  }
+
+  private upsertSubagent(
+    session: Session,
+    name: string,
+    status: 'running' | 'stopped',
+    ts: string,
+    lastMessage: string | null,
+  ): void {
+    const existing = session.subagents.get(name);
+    session.subagents.set(name, {
+      name,
+      displayName: shortAgentName(name),
+      status,
       startedAt: existing?.startedAt ?? ts,
-      stoppedAt: ts,
-      lastAssistantMessage: p.last_assistant_message ?? null,
-      transcriptPath: p.agent_transcript_path ?? null,
+      updatedAt: ts,
+      lastMessage: lastMessage ?? existing?.lastMessage ?? null,
     });
   }
 

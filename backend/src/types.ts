@@ -68,15 +68,18 @@ export interface Turn {
   lastAssistantMessage?: string | null;
 }
 
+// A subagent as reported by the main agent's collaboration tool calls
+// (collaborationspawn_agent / collaborationwait_agent). Keyed by its agent_name
+// path (e.g. "/root/mock_task_1"); displayName is the short task name.
+// NOTE: this is intentionally NOT keyed by the SubagentStart hook's UUID agent_id —
+// that UUID never appears in the spawn/wait payloads, so the two can't be joined.
 export interface Subagent {
-  agentId: string;
-  agentType: string;
-  turnId?: string;
+  name: string; // agent_name path, e.g. "/root/mock_task_1"
+  displayName: string; // short name, e.g. "mock_task_1"
   status: 'running' | 'stopped';
   startedAt: string;
-  stoppedAt?: string;
-  lastAssistantMessage?: string | null;
-  transcriptPath?: string | null;
+  updatedAt: string;
+  lastMessage?: string | null; // completion message, when finished
 }
 
 export interface RawEvent {
