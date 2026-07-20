@@ -72,8 +72,8 @@ Single static page served by Express. Two steps:
   Stores the backend WS URL too.
 - Boot: creds in NVS → connect; else show a **provisioning** screen ("Connect USB, open
   the admin page").
-- `ws_client.*` — WebSocket client (Links2004 **arduinoWebSockets**, installed via Library
-  Manager) to the backend `/ws/device`; parses `snapshot`/`session_update`/`notification`
+- `ws_client.*` — WebSocket client (**ArduinoHttpClient** `WebSocketClient`, polling API over
+  WiFiClient) to the backend `/ws/device`; parses `snapshot`/`session_update`/`notification`
   (ArduinoJson), fills the live model; sends `confirm_done`.
 - Replace `mock_data` with a live model populated from WS; keep existing screens.
 - Notifications: on `task_done` / `permission_request`, show a banner + play a tone
@@ -81,7 +81,7 @@ Single static page served by Express. Two steps:
 
 ## New dependencies
 - Backend: `ws`, `serialport`, `@serialport/parser-readline` (+ `@types/ws`).
-- Firmware: `ArduinoJson`, `arduinoWebSockets` (Links2004) via Arduino Library Manager.
+- Firmware: `ArduinoJson` (v7), `ArduinoHttpClient` (WebSocketClient) via Arduino Library Manager.
 
 ## Out of scope this pass
 Spoken TTS (deferred; tone only), Claude Code integration, persistence/Mongo.

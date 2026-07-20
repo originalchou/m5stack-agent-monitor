@@ -42,7 +42,7 @@ WiFi/BLE, 16 MB flash, 8 MB PSRAM.
 **Firmware (Arduino IDE):**
 1. Install the M5Stack ESP32 board package; select board **M5CoreS3**.
 2. Install libraries: **M5Unified** + **M5GFX** (already present), **ArduinoJson** (v7), and
-   **WebSockets** by Markus Sattler (arduinoWebSockets) — both via the Library Manager.
+   **ArduinoHttpClient** (provides `WebSocketClient`) — via the Library Manager.
 3. Open `agent-monitor-main/agent-monitor-main.ino`, build, and flash over USB-C.
 4. With the device on USB, open the admin page (`http://localhost:3050`) and set up WiFi. Once
    connected, the device streams live data from the backend.

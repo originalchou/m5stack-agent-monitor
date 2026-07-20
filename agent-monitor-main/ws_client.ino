@@ -1,15 +1,19 @@
 // ws_client.ino — WebSocket client to the backend (/ws/device). Parses snapshot and
 // notification messages (ArduinoJson) into the live model and sends confirm_done.
 //
-// Requires the "WebSockets" library by Markus Sattler (arduinoWebSockets), installed
-// via the Arduino Library Manager.
+// Uses the WebSocketClient from the ArduinoHttpClient library (polling API over a
+// WiFiClient) plus ArduinoJson — both installed via the Arduino Library Manager.
 #include "app.h"
 #include <WiFi.h>
-#include <WebSocketsClient.h>
+#include <ArduinoHttpClient.h>
 #include <ArduinoJson.h>
 
-static WebSocketsClient ws;
+static WiFiClient s_wifi;
+static WebSocketClient* s_ws = nullptr;
 static bool s_connected = false;
+static String s_host, s_path = "/ws/device";
+static uint16_t s_port = 3050;
+static uint32_t s_lastAttempt = 0;
 
 bool wsIsConnected() { return s_connected; }
 
@@ -76,49 +80,76 @@ static void handleNotification(JsonDocument& doc) {
   g_needRedraw = true;
 }
 
-static void onText(uint8_t* payload, size_t length) {
+static void onText(const String& msg) {
   JsonDocument doc;
-  if (deserializeJson(doc, payload, length)) return;
+  if (deserializeJson(doc, msg)) return;
   const char* type = doc["type"] | "";
   if (strcmp(type, "snapshot") == 0) applySnapshot(doc);
   else if (strcmp(type, "notification") == 0) handleNotification(doc);
 }
 
-static void wsEvent(WStype_t type, uint8_t* payload, size_t length) {
-  switch (type) {
-    case WStype_CONNECTED:
-      s_connected = true;
-      g_appState = APP_RUNNING;
-      g_needRedraw = true;
-      break;
-    case WStype_DISCONNECTED:
-      s_connected = false;
-      g_statusLine = "Reconnecting to backend…";
-      g_needRedraw = true;
-      break;
-    case WStype_TEXT:
-      onText(payload, length);
-      break;
-    default:
-      break;
+static void tryConnect() {
+  if (!s_ws) return;
+  s_ws->stop(); // ensure the underlying socket is clean before (re)connecting
+  int rc = s_ws->begin(s_path);
+  if (rc == 0 && s_ws->connected()) {
+    s_connected = true;
+    g_appState = APP_RUNNING;
+    g_needRedraw = true;
   }
 }
 
 void wsBegin(const String& host, uint16_t port, const String& path) {
-  ws.begin(host.c_str(), port, path.c_str());
-  ws.onEvent(wsEvent);
-  ws.setReconnectInterval(3000);
+  s_host = host;
+  s_port = port;
+  if (path.length()) s_path = path;
+  if (s_ws) {
+    delete s_ws;
+    s_ws = nullptr;
+  }
+  s_ws = new WebSocketClient(s_wifi, s_host, s_port);
+  s_connected = false;
+  s_lastAttempt = 0; // connect on the next wsLoop tick
 }
 
 void wsLoop() {
-  if (s_connected || WiFi.status() == WL_CONNECTED) ws.loop();
+  if (!s_ws) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    s_connected = false;
+    return;
+  }
+
+  if (!s_connected) {
+    if (millis() - s_lastAttempt >= 3000) {
+      s_lastAttempt = millis();
+      g_statusLine = "Connecting to backend…";
+      g_needRedraw = true;
+      tryConnect();
+    }
+    return;
+  }
+
+  // Connected: drain any queued messages (backend pushes snapshots + notifications).
+  int size;
+  while ((size = s_ws->parseMessage()) > 0) {
+    onText(s_ws->readString());
+  }
+  if (!s_ws->connected()) {
+    s_connected = false;
+    g_appState = APP_CONNECTING;
+    g_statusLine = "Reconnecting to backend…";
+    g_needRedraw = true;
+  }
 }
 
 void wsSendConfirmDone(const String& sessionId) {
+  if (!s_ws || !s_connected) return;
   JsonDocument doc;
   doc["type"] = "confirm_done";
   doc["sessionId"] = sessionId;
   String out;
   serializeJson(doc, out);
-  ws.sendTXT(out);
+  s_ws->beginMessage(TYPE_TEXT);
+  s_ws->print(out);
+  s_ws->endMessage();
 }
