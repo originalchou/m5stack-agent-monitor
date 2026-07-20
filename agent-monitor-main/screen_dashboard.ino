@@ -1,5 +1,4 @@
-// screen_dashboard.ino — task dashboard (carousel centre).
-// One card per running task: name, agent badge, live running time.
+// screen_dashboard.ino — task dashboard (carousel centre). One card per live session.
 #include "app.h"
 
 static void drawHeader(const char* title, const char* right) {
@@ -16,40 +15,53 @@ static void drawHeader(const char* title, const char* right) {
   }
 }
 
-static void drawTaskCard(const Task& t, int y) {
+static void drawSessionCard(const Session& s, int y) {
   const int x = PAD, w = SCR_W - 2 * PAD;
   canvas.fillRoundRect(x, y, w, CARD_H, 8, COL_CARD);
-  // agent accent bar on the left edge
-  canvas.fillRoundRect(x + 6, y + 9, 5, CARD_H - 18, 2, agentColor(t.agent));
+  canvas.fillRoundRect(x + 6, y + 9, 5, CARD_H - 18, 2, agentColor(s.agent));
 
-  // task name
   canvas.setFont(&fonts::FreeSansBold9pt7b);
   canvas.setTextColor(COL_TEXT);
   canvas.setTextDatum(textdatum_t::top_left);
-  canvas.drawString(t.name, x + 20, y + 8);
+  // clip long titles to the card width
+  String title = s.title;
+  canvas.drawString(title.c_str(), x + 20, y + 8);
 
-  // agent badge (bottom-left)
-  drawAgentBadge(canvas, x + 20, y + CARD_H - 24, t.agent);
+  drawAgentBadge(canvas, x + 20, y + CARD_H - 24, s.agent);
 
-  // live running time (bottom-right)
   char buf[16];
-  formatDuration(taskElapsed(t), buf, sizeof(buf));
+  formatDuration(s.elapsedNow(), buf, sizeof(buf));
   canvas.setFont(&fonts::FreeSans9pt7b);
-  canvas.setTextColor(COL_MUTED);
-  canvas.setTextDatum(textdatum_t::bottom_right);
-  canvas.drawString(buf, x + w - 12, y + CARD_H - 8);
+  if (s.done) {
+    canvas.setTextColor(COL_GOOD);
+    canvas.setTextDatum(textdatum_t::bottom_right);
+    canvas.drawString("DONE", x + w - 12, y + CARD_H - 8);
+  } else {
+    canvas.setTextColor(COL_MUTED);
+    canvas.setTextDatum(textdatum_t::bottom_right);
+    canvas.drawString(buf, x + w - 12, y + CARD_H - 8);
+  }
 }
 
 void drawDashboard() {
   canvas.fillSprite(COL_BG);
 
   char count[24];
-  snprintf(count, sizeof(count), "%d running", g_taskCount);
+  snprintf(count, sizeof(count), "%d active", (int)g_sessions.size());
   drawHeader("Agent Monitor", count);
 
-  int top = HEADER_H + PAD;
-  for (int i = 0; i < g_taskCount; i++) {
-    drawTaskCard(g_tasks[i], top + i * (CARD_H + CARD_GAP));
+  if (g_sessions.empty()) {
+    canvas.setFont(&fonts::FreeSans9pt7b);
+    canvas.setTextColor(COL_MUTED);
+    canvas.setTextDatum(textdatum_t::middle_center);
+    canvas.drawString("No active tasks", SCR_W / 2, SCR_H / 2);
+  } else {
+    int top = HEADER_H + PAD;
+    int maxCards = (DOTS_Y - top) / (CARD_H + CARD_GAP);
+    int n = (int)g_sessions.size();
+    for (int i = 0; i < n && i < maxCards; i++) {
+      drawSessionCard(g_sessions[i], top + i * (CARD_H + CARD_GAP));
+    }
   }
 
   drawPageDots(canvas, 1, 3);
