@@ -23,8 +23,7 @@ static void drawSessionCard(const Session& s, int y) {
   canvas.setFont(&fonts::FreeSansBold9pt7b);
   canvas.setTextColor(COL_TEXT);
   canvas.setTextDatum(textdatum_t::top_left);
-  // clip long titles to the card width
-  String title = s.title;
+  String title = fitText(canvas, s.title, w - 28); // truncate long titles to the card
   canvas.drawString(title.c_str(), x + 20, y + 8);
 
   drawAgentBadge(canvas, x + 20, y + CARD_H - 24, s.agent);

@@ -16,7 +16,7 @@ static constexpr uint16_t COL_MUTED   = RGB565(140, 150, 170); // secondary text
 static constexpr uint16_t COL_TRACK   = RGB565(48, 55, 74);    // progress-bar track
 
 static constexpr uint16_t COL_CLAUDE  = RGB565(217, 119, 66);  // Claude = warm clay/orange
-static constexpr uint16_t COL_CODEX   = RGB565(38, 198, 182);  // Codex  = teal
+static constexpr uint16_t COL_CODEX   = RGB565(64, 156, 255);  // Codex  = blue
 static constexpr uint16_t COL_ACCENT  = RGB565(96, 141, 255);  // generic accent (blue)
 static constexpr uint16_t COL_GOOD    = RGB565(74, 201, 126);  // green
 static constexpr uint16_t COL_WARN    = RGB565(240, 180, 70);  // amber
@@ -47,6 +47,21 @@ inline void formatDuration(uint32_t sec, char* out, size_t n) {
   uint32_t h = sec / 3600, m = (sec % 3600) / 60, s = sec % 60;
   if (h > 0) snprintf(out, n, "%u:%02u:%02u", (unsigned)h, (unsigned)m, (unsigned)s);
   else       snprintf(out, n, "%02u:%02u", (unsigned)m, (unsigned)s);
+}
+
+// --- Truncate a string to fit maxW pixels, appending "..." on overflow.
+//     Set the font on `cv` before calling (textWidth depends on it). ---
+inline String fitText(M5Canvas& cv, const String& s, int maxW) {
+  if (cv.textWidth(s.c_str()) <= maxW) return s;
+  const char* ell = "...";
+  int ellW = cv.textWidth(ell);
+  String out;
+  for (int i = 0; i < (int)s.length(); i++) {
+    String cand = s.substring(0, i + 1);
+    if (cv.textWidth(cand.c_str()) + ellW > maxW) break;
+    out = cand;
+  }
+  return out + ell;
 }
 
 // --- Small colored pill showing the agent name (returns pill width) ---

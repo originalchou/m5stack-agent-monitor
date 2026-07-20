@@ -29,6 +29,7 @@ enum AppState : uint8_t {
 extern AppState g_appState;
 extern String g_statusLine; // sub-text on the provisioning/connecting screen
 extern bool g_needRedraw;   // set by net code when live data changes
+extern int g_detailScroll;  // vertical scroll offset (px) for the detail lists
 
 // Notification overlay.
 enum NotifKind : uint8_t { NOTIF_NONE, NOTIF_TASK_DONE, NOTIF_PERMISSION };

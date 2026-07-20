@@ -1,5 +1,6 @@
 // screen_detail.ino — task detail: running time, context window, plan steps
-// (subtasks), and subagents. Swipe right (handled in main) returns to the dashboard.
+// (subtasks), and subagents. The two lists scroll vertically (drag) when they
+// overflow; swipe right (handled in main) returns to the dashboard.
 #include "app.h"
 
 static void drawBackChevron(int x, int y) {
@@ -32,16 +33,17 @@ static void tileLabel(int x, int y, const char* label) {
 void drawTaskDetail(const Session& s) {
   canvas.fillSprite(COL_BG);
 
-  // Header
+  // --- Header: chevron + (truncated) title, agent badge ---
   canvas.fillRect(0, 0, SCR_W, HEADER_H, COL_HEADER);
   drawBackChevron(12, HEADER_H / 2);
+  const int badgeX = SCR_W - PAD - 62;
   canvas.setFont(&fonts::FreeSansBold9pt7b);
   canvas.setTextColor(COL_TEXT);
   canvas.setTextDatum(textdatum_t::middle_left);
-  canvas.drawString(s.title.c_str(), 28, HEADER_H / 2);
-  drawAgentBadge(canvas, SCR_W - PAD - 62, (HEADER_H - 18) / 2, s.agent);
+  canvas.drawString(fitText(canvas, s.title, badgeX - 6 - 28).c_str(), 28, HEADER_H / 2);
+  drawAgentBadge(canvas, badgeX, (HEADER_H - 18) / 2, s.agent);
 
-  // Stat tiles: running time + context left
+  // --- Stat tiles: running time + context left ---
   const int tileY = HEADER_H + 10;
   tileLabel(PAD, tileY, s.done ? "FINISHED" : "RUNNING");
   char buf[24];
@@ -67,50 +69,67 @@ void drawTaskDetail(const Session& s) {
     canvas.drawString("—", cx, tileY + 22);
   }
 
+  // --- Two columns: plan (left) + subagents (right), scrollable together ---
   const int colY = tileY + 62;
+  const int rx = 175;
+  const int listTop = colY + 24;
+  const int viewportBottom = SCR_H - 6;
+  const int viewportH = viewportBottom - listTop;
+  const int rowH = 18;
+  const int leftTextW = (rx - 8) - (PAD + 18);
+  const int rightTextW = (SCR_W - PAD - 6) - (rx + 16);
 
-  // Plan steps (left column)
+  const int planCount = (int)s.plan.size();
+  const int agentCount = (int)s.agents.size();
   int done = 0;
   for (auto& p : s.plan) if (p.status == STEP_DONE) done++;
+
+  // Column headers (fixed)
   canvas.setFont(&fonts::FreeSansBold9pt7b);
   canvas.setTextColor(COL_TEXT);
   canvas.setTextDatum(textdatum_t::top_left);
-  if (!s.plan.empty()) {
-    snprintf(buf, sizeof(buf), "Plan  %d/%d", done, (int)s.plan.size());
-    canvas.drawString(buf, PAD, colY);
-  } else {
-    canvas.drawString("Plan", PAD, colY);
-  }
-  canvas.setFont(&fonts::Font2);
-  if (s.plan.empty()) {
-    canvas.setTextColor(COL_MUTED);
-    canvas.drawString("none", PAD, colY + 22);
-  }
-  int rows = (SCR_H - (colY + 24)) / 18; // clip to available height
-  for (int i = 0; i < (int)s.plan.size() && i < rows; i++) {
-    int ry = colY + 24 + i * 18;
-    drawPlanGlyph(PAD + 6, ry + 5, s.plan[i].status);
-    canvas.setTextColor(s.plan[i].status == STEP_DONE ? COL_MUTED : COL_TEXT);
-    canvas.setTextDatum(textdatum_t::top_left);
-    canvas.drawString(s.plan[i].step.c_str(), PAD + 18, ry);
-  }
-
-  // Subagents (right column)
-  const int rx = 175;
-  canvas.setFont(&fonts::FreeSansBold9pt7b);
-  canvas.setTextColor(COL_TEXT);
+  if (planCount > 0) snprintf(buf, sizeof(buf), "Plan  %d/%d", done, planCount);
+  else snprintf(buf, sizeof(buf), "Plan");
+  canvas.drawString(buf, PAD, colY);
   snprintf(buf, sizeof(buf), "Agents  %d", s.activeAgents);
   canvas.drawString(buf, rx, colY);
+
+  // Empty-state text (fixed)
   canvas.setFont(&fonts::Font2);
-  if (s.agents.empty()) {
-    canvas.setTextColor(COL_MUTED);
-    canvas.drawString("none", rx, colY + 22);
+  canvas.setTextColor(COL_MUTED);
+  if (planCount == 0) canvas.drawString("none", PAD, listTop);
+  if (agentCount == 0) canvas.drawString("none", rx, listTop);
+
+  // Clamp scroll to the taller of the two columns.
+  const int contentH = (planCount > agentCount ? planCount : agentCount) * rowH;
+  int maxScroll = contentH - viewportH;
+  if (maxScroll < 0) maxScroll = 0;
+  if (g_detailScroll > maxScroll) g_detailScroll = maxScroll;
+
+  canvas.setClipRect(0, listTop, SCR_W, viewportH);
+  canvas.setFont(&fonts::Font2);
+  canvas.setTextDatum(textdatum_t::top_left);
+  for (int i = 0; i < planCount; i++) {
+    int ry = listTop + i * rowH - g_detailScroll;
+    if (ry + rowH <= listTop || ry >= viewportBottom) continue;
+    drawPlanGlyph(PAD + 6, ry + 5, s.plan[i].status);
+    canvas.setTextColor(s.plan[i].status == STEP_DONE ? COL_MUTED : COL_TEXT);
+    canvas.drawString(fitText(canvas, s.plan[i].step, leftTextW).c_str(), PAD + 18, ry);
   }
-  for (int i = 0; i < (int)s.agents.size() && i < rows; i++) {
-    int ry = colY + 24 + i * 18;
+  for (int i = 0; i < agentCount; i++) {
+    int ry = listTop + i * rowH - g_detailScroll;
+    if (ry + rowH <= listTop || ry >= viewportBottom) continue;
     canvas.fillCircle(rx + 5, ry + 6, 4, s.agents[i].running ? COL_GOOD : COL_DOT_OFF);
     canvas.setTextColor(s.agents[i].running ? COL_TEXT : COL_MUTED);
-    canvas.setTextDatum(textdatum_t::top_left);
-    canvas.drawString(s.agents[i].type.c_str(), rx + 16, ry);
+    canvas.drawString(fitText(canvas, s.agents[i].type, rightTextW).c_str(), rx + 16, ry);
+  }
+  canvas.clearClipRect();
+
+  // Scrollbar thumb (only when there's overflow).
+  if (maxScroll > 0) {
+    int thumbH = viewportH * viewportH / contentH;
+    if (thumbH < 12) thumbH = 12;
+    int thumbY = listTop + (viewportH - thumbH) * g_detailScroll / maxScroll;
+    canvas.fillRoundRect(SCR_W - 4, thumbY, 3, thumbH, 1, COL_DOT_OFF);
   }
 }

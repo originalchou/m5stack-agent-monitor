@@ -16,6 +16,7 @@ Usage g_claudeUsage;
 AppState g_appState = APP_PROVISIONING;
 String g_statusLine;
 bool g_needRedraw = true;
+int g_detailScroll = 0;
 Notification g_notif;
 
 // --- Carousel state (within APP_RUNNING) ---
@@ -62,6 +63,7 @@ static void handleTapDashboard(int y) {
     if (y >= cardY && y <= cardY + CARD_H) {
       s_selected = i;
       s_screen = SCR_DETAIL;
+      g_detailScroll = 0; // start at the top of the lists
       g_needRedraw = true;
       return;
     }
@@ -104,6 +106,18 @@ void loop() {
   netLoop();
 
   auto t = M5.Touch.getDetail();
+
+  // Live vertical scroll on the detail lists (drag up/down). The upper bound is
+  // clamped in drawTaskDetail once it knows the content height.
+  if (g_appState == APP_RUNNING && s_screen == SCR_DETAIL && !g_notif.active && t.isPressed()) {
+    int ddy = t.deltaY();
+    if (ddy != 0 && abs(ddy) >= abs(t.deltaX())) {
+      g_detailScroll -= ddy; // drag up -> scroll down
+      if (g_detailScroll < 0) g_detailScroll = 0;
+      g_needRedraw = true;
+    }
+  }
+
   if (t.wasReleased()) {
     int dx = t.distanceX(), dy = t.distanceY();
     if (g_notif.active) {
