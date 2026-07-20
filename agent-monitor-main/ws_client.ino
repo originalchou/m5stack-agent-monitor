@@ -3,10 +3,7 @@
 //
 // Uses ArduinoHttpClient's WebSocketClient (polling API over WiFiClient) and the
 // Arduino_JSON library (JSONVar) — both from the Arduino Library Manager.
-#include "app.h"
-#include <WiFi.h>
-#include <ArduinoHttpClient.h>
-#include <Arduino_JSON.h>
+#include "app.h" // brings in WiFi.h, ArduinoHttpClient.h, Arduino_JSON (see app.h include order)
 
 static WiFiClient s_wifi;
 static WebSocketClient* s_ws = nullptr;

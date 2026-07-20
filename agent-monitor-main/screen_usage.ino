@@ -1,6 +1,5 @@
 // screen_usage.ino — per-agent usage limit (carousel left = Claude, right = Codex).
-#include "app.h"
-#include <time.h>
+#include "app.h" // brings in time.h (see app.h include order)
 
 static void fmtResetIn(uint32_t resetsAt, char* out, size_t n) {
   time_t now = time(nullptr);

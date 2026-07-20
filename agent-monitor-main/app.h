@@ -1,8 +1,21 @@
 // app.h — shared declarations tying the tabs together.
 #pragma once
+
+// All system/library headers used by any tab are included here, BEFORE Arduino_JSON.
+// Two reasons:
+//  1. JSONVar must be declared before Arduino hoists the auto-generated prototypes
+//     for cross-tab functions (which use it) to the top of the combined sketch.
+//  2. Arduino_JSON.h does `#define null nullptr` and `#define typeof typeof_`, which
+//     would corrupt ESP-IDF/system headers (they use `typeof` in macros). Pulling
+//     every system header in first means those macros only ever reach our own code.
 #include <M5Unified.h>
+#include <WiFi.h>
+#include <Preferences.h>
+#include <ArduinoHttpClient.h>
+#include <time.h>
 #include "theme.h"
 #include "model.h"
+#include <Arduino_JSON.h> // must be last
 
 // Off-screen buffer every screen draws into (flicker-free push in render()).
 extern M5Canvas canvas;

@@ -1,9 +1,6 @@
 // net_config.ino — WiFi credentials (NVS), USB-serial provisioning protocol, and the
 // WiFi connection state machine. Talks to the backend's serial bridge in JSON lines.
-#include "app.h"
-#include <WiFi.h>
-#include <Preferences.h>
-#include <Arduino_JSON.h>
+#include "app.h" // brings in WiFi.h, Preferences.h, Arduino_JSON (see app.h include order)
 
 static const char* FW_VERSION = "0.1.0";
 
