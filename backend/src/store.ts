@@ -123,7 +123,9 @@ export class InMemorySessionStore implements SessionStore {
       if (agentType && type !== agentType) continue;
       out.push(...byId.values());
     }
-    return out.sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));
+    // Stable order (oldest first) so the device dashboard doesn't reshuffle on every
+    // update. startedAt never changes, unlike lastActivityAt.
+    return out.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
   }
 
   removeSession(agentType: AgentType, sessionId: string): boolean {
@@ -292,6 +294,14 @@ export class InMemorySessionStore implements SessionStore {
     session.doneAt = ts;
     if (p.turn_id) {
       this.ensureTurn(session, p.turn_id, ts).lastAssistantMessage = p.last_assistant_message ?? null;
+    }
+    // The turn ended, so every subagent it spawned is finished. wait_agent rosters
+    // are partial (some subagents never appear), so Stop is the reliable "all done".
+    for (const sa of session.subagents.values()) {
+      if (sa.status === 'running') {
+        sa.status = 'stopped';
+        sa.updatedAt = ts;
+      }
     }
   }
 }

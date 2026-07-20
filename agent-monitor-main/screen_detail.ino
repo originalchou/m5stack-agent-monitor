@@ -119,7 +119,9 @@ void drawTaskDetail(const Session& s) {
   for (int i = 0; i < agentCount; i++) {
     int ry = listTop + i * rowH - g_detailScroll;
     if (ry + rowH <= listTop || ry >= viewportBottom) continue;
-    canvas.fillCircle(rx + 5, ry + 6, 4, s.agents[i].running ? COL_GOOD : COL_DOT_OFF);
+    // running = green filled dot; finished = hollow muted ring (clearly distinct)
+    if (s.agents[i].running) canvas.fillCircle(rx + 5, ry + 6, 4, COL_GOOD);
+    else canvas.drawCircle(rx + 5, ry + 6, 4, COL_MUTED);
     canvas.setTextColor(s.agents[i].running ? COL_TEXT : COL_MUTED);
     canvas.drawString(fitText(canvas, s.agents[i].type, rightTextW).c_str(), rx + 16, ry);
   }

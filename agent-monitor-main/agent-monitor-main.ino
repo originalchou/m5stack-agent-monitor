@@ -22,8 +22,13 @@ Notification g_notif;
 // --- Carousel state (within APP_RUNNING) ---
 enum Screen : uint8_t { SCR_USAGE_CLAUDE = 0, SCR_DASHBOARD = 1, SCR_USAGE_CODEX = 2, SCR_DETAIL = 3 };
 static Screen s_screen = SCR_DASHBOARD;
-static int s_selected = 0; // index into g_sessions for the detail page
+static String s_selectedId; // session id shown on the detail page (stable across snapshots)
 static uint32_t s_lastDraw = 0;
+
+static const Session* findSession(const String& id) {
+  for (const auto& s : g_sessions) if (s.id == id) return &s;
+  return nullptr;
+}
 
 // --- Rendering ---
 static void renderRunning() {
@@ -31,10 +36,12 @@ static void renderRunning() {
     case SCR_USAGE_CLAUDE: drawUsage(g_claudeUsage, AGENT_CLAUDE, 0); break;
     case SCR_DASHBOARD:    drawDashboard(); break;
     case SCR_USAGE_CODEX:  drawUsage(g_codexUsage, AGENT_CODEX, 2); break;
-    case SCR_DETAIL:
-      if (s_selected >= 0 && s_selected < (int)g_sessions.size()) drawTaskDetail(g_sessions[s_selected]);
-      else { s_screen = SCR_DASHBOARD; drawDashboard(); }
+    case SCR_DETAIL: {
+      const Session* sel = findSession(s_selectedId);
+      if (sel) drawTaskDetail(*sel);
+      else { s_screen = SCR_DASHBOARD; drawDashboard(); } // session ended/removed
       break;
+    }
   }
 }
 
@@ -61,7 +68,7 @@ static void handleTapDashboard(int y) {
   for (int i = 0; i < (int)g_sessions.size(); i++) {
     int cardY = top + i * (CARD_H + CARD_GAP);
     if (y >= cardY && y <= cardY + CARD_H) {
-      s_selected = i;
+      s_selectedId = g_sessions[i].id;
       s_screen = SCR_DETAIL;
       g_detailScroll = 0; // start at the top of the lists
       g_needRedraw = true;
