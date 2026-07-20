@@ -74,14 +74,14 @@ Single static page served by Express. Two steps:
   the admin page").
 - `ws_client.*` — WebSocket client (**ArduinoHttpClient** `WebSocketClient`, polling API over
   WiFiClient) to the backend `/ws/device`; parses `snapshot`/`session_update`/`notification`
-  (ArduinoJson), fills the live model; sends `confirm_done`.
+  (Arduino_JSON), fills the live model; sends `confirm_done`.
 - Replace `mock_data` with a live model populated from WS; keep existing screens.
 - Notifications: on `task_done` / `permission_request`, show a banner + play a tone
   (`M5.Speaker.tone`); `task_done` shows a Confirm button → sends `confirm_done`.
 
 ## New dependencies
 - Backend: `ws`, `serialport`, `@serialport/parser-readline` (+ `@types/ws`).
-- Firmware: `ArduinoJson` (v7), `ArduinoHttpClient` (WebSocketClient) via Arduino Library Manager.
+- Firmware: `Arduino_JSON` (by Arduino), `ArduinoHttpClient` (WebSocketClient) via Arduino Library Manager.
 
 ## Out of scope this pass
 Spoken TTS (deferred; tone only), Claude Code integration, persistence/Mongo.

@@ -1,12 +1,12 @@
 // ws_client.ino — WebSocket client to the backend (/ws/device). Parses snapshot and
-// notification messages (ArduinoJson) into the live model and sends confirm_done.
+// notification messages into the live model and sends confirm_done.
 //
-// Uses the WebSocketClient from the ArduinoHttpClient library (polling API over a
-// WiFiClient) plus ArduinoJson — both installed via the Arduino Library Manager.
+// Uses ArduinoHttpClient's WebSocketClient (polling API over WiFiClient) and the
+// Arduino_JSON library (JSONVar) — both from the Arduino Library Manager.
 #include "app.h"
 #include <WiFi.h>
 #include <ArduinoHttpClient.h>
-#include <ArduinoJson.h>
+#include <Arduino_JSON.h>
 
 static WiFiClient s_wifi;
 static WebSocketClient* s_ws = nullptr;
@@ -17,80 +17,97 @@ static uint32_t s_lastAttempt = 0;
 
 bool wsIsConnected() { return s_connected; }
 
-static void applyUsage(Usage& u, JsonObject o) {
-  if (o.isNull()) {
-    u.valid = false;
-    return;
-  }
-  u.usedPercent = o["usedPercent"].isNull() ? -1 : (int)o["usedPercent"];
-  u.resetsAt = o["resetsAt"] | 0UL;
-  u.windowMinutes = o["windowMinutes"] | 0;
-  u.planType = (const char*)(o["planType"] | "");
-  u.valid = u.usedPercent >= 0;
-}
+// --- small typed accessors over JSONVar ---
+static String jStr(JSONVar v) { return (JSON.typeof(v) == "string") ? (const char*)v : String(); }
+static int jNum(JSONVar v, int def) { return (JSON.typeof(v) == "number") ? (int)v : def; }
+static bool isArray(JSONVar v) { return JSON.typeof(v) == "array"; }
 
-static uint8_t planStatus(const char* s) {
-  if (strcmp(s, "completed") == 0) return STEP_DONE;
-  if (strcmp(s, "in_progress") == 0) return STEP_IN_PROGRESS;
+static uint8_t planStatus(const String& s) {
+  if (s == "completed") return STEP_DONE;
+  if (s == "in_progress") return STEP_IN_PROGRESS;
   return STEP_PENDING;
 }
 
-static void applySnapshot(JsonDocument& doc) {
+static void applyUsage(Usage& u, JSONVar o) {
+  if (JSON.typeof(o) != "object") {
+    u.valid = false;
+    return;
+  }
+  u.usedPercent = (JSON.typeof(o["usedPercent"]) == "number") ? (int)o["usedPercent"] : -1;
+  u.resetsAt = (JSON.typeof(o["resetsAt"]) == "number") ? (unsigned long)o["resetsAt"] : 0UL;
+  u.windowMinutes = jNum(o["windowMinutes"], 0);
+  u.planType = jStr(o["planType"]);
+  u.valid = u.usedPercent >= 0;
+}
+
+static void applySnapshot(JSONVar& doc) {
   g_sessions.clear();
-  for (JsonObject so : doc["sessions"].as<JsonArray>()) {
+  JSONVar sessions = doc["sessions"];
+  int n = isArray(sessions) ? sessions.length() : 0;
+  for (int i = 0; i < n; i++) {
+    JSONVar so = sessions[i];
     Session s;
-    s.id = (const char*)(so["id"] | "");
-    s.title = (const char*)(so["title"] | "");
-    s.agent = agentFromString(so["agent"] | "codex");
-    s.done = strcmp((const char*)(so["status"] | "running"), "done") == 0;
-    s.elapsedBase = so["elapsedSeconds"] | 0UL;
+    s.id = jStr(so["id"]);
+    s.title = jStr(so["title"]);
+    s.agent = agentFromString(jStr(so["agent"]).c_str());
+    s.done = (jStr(so["status"]) == "done");
+    s.elapsedBase = (JSON.typeof(so["elapsedSeconds"]) == "number") ? (unsigned long)so["elapsedSeconds"] : 0UL;
     s.syncMillis = millis();
-    s.contextLeftPercent = so["contextLeftPercent"].isNull() ? -1 : (int)(so["contextLeftPercent"] | -1);
-    for (JsonObject p : so["plan"].as<JsonArray>()) {
+    s.contextLeftPercent = (JSON.typeof(so["contextLeftPercent"]) == "number") ? (int)so["contextLeftPercent"] : -1;
+
+    JSONVar plan = so["plan"];
+    int pn = isArray(plan) ? plan.length() : 0;
+    for (int j = 0; j < pn; j++) {
+      JSONVar p = plan[j];
       PlanStep ps;
-      ps.step = (const char*)(p["step"] | "");
-      ps.status = planStatus(p["status"] | "pending");
+      ps.step = jStr(p["step"]);
+      ps.status = planStatus(jStr(p["status"]));
       s.plan.push_back(ps);
     }
-    for (JsonObject a : so["agents"].as<JsonArray>()) {
+    JSONVar agents = so["agents"];
+    int an = isArray(agents) ? agents.length() : 0;
+    for (int j = 0; j < an; j++) {
+      JSONVar a = agents[j];
       SubAgent sa;
-      sa.type = (const char*)(a["type"] | "");
-      sa.running = strcmp((const char*)(a["status"] | ""), "running") == 0;
+      sa.type = jStr(a["type"]);
+      sa.running = (jStr(a["status"]) == "running");
       s.agents.push_back(sa);
     }
-    s.activeAgents = so["activeAgents"] | 0;
+    s.activeAgents = jNum(so["activeAgents"], 0);
     g_sessions.push_back(s);
   }
-  applyUsage(g_codexUsage, doc["usage"]["codex"].as<JsonObject>());
+
+  JSONVar usage = doc["usage"];
+  applyUsage(g_codexUsage, usage["codex"]);
   g_needRedraw = true;
 }
 
-static void handleNotification(JsonDocument& doc) {
-  const char* kind = doc["kind"] | "";
-  if (strcmp(kind, "task_done") == 0) g_notif.kind = NOTIF_TASK_DONE;
-  else if (strcmp(kind, "permission_request") == 0) g_notif.kind = NOTIF_PERMISSION;
+static void handleNotification(JSONVar& doc) {
+  String kind = jStr(doc["kind"]);
+  if (kind == "task_done") g_notif.kind = NOTIF_TASK_DONE;
+  else if (kind == "permission_request") g_notif.kind = NOTIF_PERMISSION;
   else return;
-  g_notif.sessionId = (const char*)(doc["sessionId"] | "");
-  g_notif.title = (const char*)(doc["title"] | "");
-  g_notif.tool = (const char*)(doc["tool"] | "");
-  g_notif.command = (const char*)(doc["command"] | "");
-  g_notif.description = (const char*)(doc["description"] | "");
+  g_notif.sessionId = jStr(doc["sessionId"]);
+  g_notif.title = jStr(doc["title"]);
+  g_notif.tool = jStr(doc["tool"]);
+  g_notif.command = jStr(doc["command"]);
+  g_notif.description = jStr(doc["description"]);
   g_notif.active = true;
   playAlertTone();
   g_needRedraw = true;
 }
 
 static void onText(const String& msg) {
-  JsonDocument doc;
-  if (deserializeJson(doc, msg)) return;
-  const char* type = doc["type"] | "";
-  if (strcmp(type, "snapshot") == 0) applySnapshot(doc);
-  else if (strcmp(type, "notification") == 0) handleNotification(doc);
+  JSONVar doc = JSON.parse(msg);
+  if (JSON.typeof(doc) != "object") return;
+  String type = jStr(doc["type"]);
+  if (type == "snapshot") applySnapshot(doc);
+  else if (type == "notification") handleNotification(doc);
 }
 
 static void tryConnect() {
   if (!s_ws) return;
-  s_ws->stop(); // ensure the underlying socket is clean before (re)connecting
+  s_ws->stop(); // ensure a clean underlying socket before (re)connecting
   int rc = s_ws->begin(s_path);
   if (rc == 0 && s_ws->connected()) {
     s_connected = true;
@@ -129,7 +146,6 @@ void wsLoop() {
     return;
   }
 
-  // Connected: drain any queued messages (backend pushes snapshots + notifications).
   int size;
   while ((size = s_ws->parseMessage()) > 0) {
     onText(s_ws->readString());
@@ -144,11 +160,10 @@ void wsLoop() {
 
 void wsSendConfirmDone(const String& sessionId) {
   if (!s_ws || !s_connected) return;
-  JsonDocument doc;
+  JSONVar doc;
   doc["type"] = "confirm_done";
   doc["sessionId"] = sessionId;
-  String out;
-  serializeJson(doc, out);
+  String out = JSON.stringify(doc);
   s_ws->beginMessage(TYPE_TEXT);
   s_ws->print(out);
   s_ws->endMessage();

@@ -3,7 +3,7 @@
 #include "app.h"
 #include <WiFi.h>
 #include <Preferences.h>
-#include <ArduinoJson.h>
+#include <Arduino_JSON.h>
 
 static const char* FW_VERSION = "0.1.0";
 
@@ -27,44 +27,47 @@ static void saveCredentials(const String& ssid, const String& pass, const String
 }
 
 // --- serial protocol ---
-static void sendJson(const JsonDocument& doc) {
-  serializeJson(doc, Serial);
+static void sendJson(JSONVar& doc) {
+  Serial.print(JSON.stringify(doc));
   Serial.print('\n');
 }
 
 static void sendPong() {
-  JsonDocument doc;
+  JSONVar doc;
   doc["type"] = "pong";
   doc["device"] = "cores3";
   doc["fw"] = FW_VERSION;
-  JsonObject wifi = doc["wifi"].to<JsonObject>();
   bool connected = WiFi.status() == WL_CONNECTED;
+  JSONVar wifi;
   wifi["connected"] = connected;
   wifi["ssid"] = s_ssid;
-  wifi["ip"] = connected ? WiFi.localIP().toString() : "";
+  wifi["ip"] = connected ? WiFi.localIP().toString() : String("");
+  doc["wifi"] = wifi;
   sendJson(doc);
 }
 
 static void sendWifiResult(bool ok) {
-  JsonDocument doc;
+  JSONVar doc;
   doc["type"] = "wifi_result";
   doc["ok"] = ok;
   doc["ssid"] = s_ssid;
-  doc["ip"] = ok ? WiFi.localIP().toString() : "";
+  doc["ip"] = ok ? WiFi.localIP().toString() : String("");
   sendJson(doc);
 }
 
 static void doScan() {
   int n = WiFi.scanNetworks();
-  JsonDocument doc;
+  JSONVar doc;
   doc["type"] = "wifi_list";
-  JsonArray arr = doc["networks"].to<JsonArray>();
+  JSONVar arr = JSON.parse("[]"); // ensure networks is always an array
   for (int i = 0; i < n; i++) {
-    JsonObject net = arr.add<JsonObject>();
+    JSONVar net;
     net["ssid"] = WiFi.SSID(i);
-    net["rssi"] = WiFi.RSSI(i);
-    net["secure"] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    net["rssi"] = (int)WiFi.RSSI(i);
+    net["secure"] = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+    arr[i] = net;
   }
+  doc["networks"] = arr;
   sendJson(doc);
   WiFi.scanDelete();
 }
@@ -79,10 +82,14 @@ static void startConnect() {
   s_connectStart = millis();
 }
 
-static void handleSetWifi(JsonDocument& doc) {
-  String ssid = doc["ssid"] | "";
-  String pass = doc["password"] | "";
-  String wsUrl = doc["backendWs"] | "";
+static String jField(JSONVar& doc, const char* key) {
+  return doc.hasOwnProperty(key) ? (const char*)doc[key] : String();
+}
+
+static void handleSetWifi(JSONVar& doc) {
+  String ssid = jField(doc, "ssid");
+  String pass = jField(doc, "password");
+  String wsUrl = jField(doc, "backendWs");
   if (!ssid.length()) return;
   saveCredentials(ssid, pass, wsUrl);
   s_pendingWifiResult = true;
@@ -91,12 +98,12 @@ static void handleSetWifi(JsonDocument& doc) {
 
 static void processSerialLine(const String& line) {
   if (line.length() == 0 || line[0] != '{') return; // ignore non-JSON
-  JsonDocument doc;
-  if (deserializeJson(doc, line)) return;
-  const char* type = doc["type"] | "";
-  if (strcmp(type, "ping") == 0) sendPong();
-  else if (strcmp(type, "scan_wifi") == 0) doScan();
-  else if (strcmp(type, "set_wifi") == 0) handleSetWifi(doc);
+  JSONVar doc = JSON.parse(line);
+  if (JSON.typeof(doc) != "object") return;
+  String type = jField(doc, "type");
+  if (type == "ping") sendPong();
+  else if (type == "scan_wifi") doScan();
+  else if (type == "set_wifi") handleSetWifi(doc);
 }
 
 static void handleSerial() {
