@@ -89,8 +89,14 @@ export class InMemorySessionStore implements SessionStore {
         this.maybeUpdateSubagents(session, payload, ts);
         this.onPostToolUse(session, payload, ts);
         break;
-      // SubagentStart/SubagentStop carry a UUID agent_id that can't be joined to the
-      // spawn/wait task names, so they're kept only in the raw event log (default case).
+      case 'SubagentStart':
+        // Bind this agent_id to the spawn that just happened (ordering heuristic).
+        this.onSubagentStart(session, payload);
+        break;
+      case 'SubagentStop':
+        // Flip the bound subagent to stopped mid-turn (more precise than waiting Stop).
+        this.onSubagentStop(session, payload, ts);
+        break;
       case 'Stop':
         this.onStop(session, payload, ts);
         break;
@@ -157,6 +163,8 @@ export class InMemorySessionStore implements SessionStore {
         usage: null,
         turns: new Map<string, Turn>(),
         subagents: new Map<string, Subagent>(),
+        pendingSpawns: [],
+        agentIdToName: new Map<string, string>(),
         events: [],
       };
       byId.set(payload.session_id, session);
@@ -215,6 +223,27 @@ export class InMemorySessionStore implements SessionStore {
     }
     if (!name || name === '/root') return;
     this.upsertSubagent(session, name, 'running', ts, null);
+    // Queue this name to bind to the SubagentStart agent_id that follows it.
+    session.pendingSpawns.push(name);
+  }
+
+  private onSubagentStart(session: Session, p: CodexHookPayload): void {
+    if (!p.agent_id) return;
+    // Assume the next SubagentStart belongs to the most recent unbound spawn (FIFO).
+    const name = session.pendingSpawns.shift();
+    if (name) session.agentIdToName.set(p.agent_id, name);
+  }
+
+  private onSubagentStop(session: Session, p: CodexHookPayload, ts: string): void {
+    if (!p.agent_id) return;
+    const name = session.agentIdToName.get(p.agent_id);
+    if (!name) return;
+    const sa = session.subagents.get(name);
+    if (sa) {
+      sa.status = 'stopped';
+      sa.updatedAt = ts;
+      if (p.last_assistant_message) sa.lastMessage = p.last_assistant_message;
+    }
   }
 
   private onWaitAgent(session: Session, p: CodexHookPayload, ts: string): void {

@@ -66,19 +66,21 @@ Registered events: `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
 `Stop`. Point the hook at a different backend with `AGENT_MONITOR_URL`
 (e.g. `http://localhost:3050`).
 
-**Subagents** are modelled from the *main* agent's collaboration tool calls, not from
-`SubagentStart`/`SubagentStop`. Those hooks carry a UUID `agent_id` that never appears
-in the spawn/wait payloads, so it can't be joined to a subagent's name — they stay in
-the raw event log only. Instead:
+**Subagents** are named from the *main* agent's collaboration tool calls (the UUID
+`agent_id` never appears in the spawn/wait payloads, so it can't be joined directly):
 
 - `collaborationspawn_agent` PostToolUse — `tool_response` (a JSON string) gives
   `{"task_name":"/root/<name>"}`; we create a subagent keyed by that path, `running`.
 - `collaborationwait_agent` PostToolUse — `tool_response` gives
-  `{"agents":[{agent_name, agent_status}]}` (or `{timed_out:true}`); we sync each
-  agent's status (`"running"` → running, `{completed}` → stopped), skipping `/root`
-  (the main agent).
+  `{"agents":[{agent_name, agent_status}]}` (or `{timed_out:true}`); we sync statuses
+  (`"running"` → running, `{completed}` → stopped), skipping `/root` (the main agent).
 
-The device shows each subagent by its short name (e.g. `mock_task_1`).
+To flip a subagent to stopped **mid-turn** (wait rosters are partial — some subagents
+never appear), each spawn's name is queued and bound to the `agent_id` of the
+`SubagentStart` that immediately follows it (FIFO ordering heuristic); the matching
+`SubagentStop` then marks that subagent stopped. `Stop` (turn end) also marks any
+still-running subagents stopped, as a fallback. The device shows each subagent by its
+short name (e.g. `mock_task_1`).
 
 `UserPromptSubmit` fires whenever the user sends a prompt, so it doubles as the
 "session is being worked right now" signal: it re-activates a session that had

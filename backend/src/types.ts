@@ -103,7 +103,12 @@ export interface Session {
   plan: SessionPlan | null; // main-agent update_plan
   usage: TranscriptMetrics | null; // context + rate limits from the transcript
   turns: Map<string, Turn>;
-  subagents: Map<string, Subagent>;
+  subagents: Map<string, Subagent>; // keyed by agent_name
+  // Internal correlation state (not serialized): pair each spawn's agent_name with the
+  // SubagentStart agent_id that immediately follows it, so SubagentStop can flip the
+  // right subagent to stopped mid-turn.
+  pendingSpawns: string[]; // agent_names awaiting a SubagentStart binding (FIFO)
+  agentIdToName: Map<string, string>; // SubagentStart agent_id -> agent_name
   events: RawEvent[]; // full raw history, newest last
 }
 
